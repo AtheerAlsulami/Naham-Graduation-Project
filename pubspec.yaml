@@ -1,0 +1,57 @@
+name: naham_app
+description: "Naham - Home Cooked Meals Delivered to Your Door"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Navigation
+  go_router: ^14.6.3
+
+  # State Management
+  provider: ^6.1.2
+
+  # UI & Fonts
+  google_fonts: ^6.2.1
+  shimmer: ^3.0.0
+  cached_network_image: ^3.4.1
+
+  # Media
+  camera: ^0.11.1
+  image_picker: ^1.2.2
+  file_picker: ^8.1.7
+  video_player: ^2.9.5
+  agora_rtc_engine: ^6.5.3
+
+  # Utils
+  intl: ^0.20.1
+  shared_preferences: ^2.3.4
+  uuid: ^4.5.1
+  sqflite: ^2.4.2+1
+  path: ^1.8.3
+  http: ^1.6.0
+  google_sign_in: ^6.3.0
+  path_provider: ^2.1.5
+  permission_handler: ^11.4.0
+  flutter_cache_manager: ^3.4.0
+  url_launcher: ^6.3.2
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+    - assets/images/
