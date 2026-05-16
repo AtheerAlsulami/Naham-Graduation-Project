@@ -56,6 +56,36 @@ class BackendPricingService {
     }
   }
 
+  Future<PricingSuggestion> suggestPriceV2({
+    required String categoryId,
+    required int preparationMinutes,
+    required String dishDescription,
+    required String profitMode,
+    required double profitValue,
+    double? currentPrice,
+  }) async {
+    final provider = BackendConfig.pricingAiProvider.trim().toLowerCase();
+    if (provider == 'groqdirect' || provider == 'groq') {
+      return _groqPricingService.suggestPriceV2(
+        categoryId: categoryId,
+        preparationMinutes: preparationMinutes,
+        dishDescription: dishDescription,
+        profitMode: profitMode,
+        profitValue: profitValue,
+        currentPrice: currentPrice,
+      );
+    }
+
+    // Fallback to local logic if Groq is not selected or fails
+    return _localSuggestPrice(
+      categoryId: categoryId,
+      preparationMinutes: preparationMinutes,
+      ingredients: const [],
+      profitMode: profitMode,
+      profitValue: profitValue,
+    );
+  }
+
   PricingSuggestion _localSuggestPrice({
     required String categoryId,
     required int preparationMinutes,

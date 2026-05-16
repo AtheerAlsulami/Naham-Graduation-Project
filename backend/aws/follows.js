@@ -60,6 +60,14 @@ async function updateUserCounter(userId, fieldName, delta) {
   if (!userId) return;
   for (const tableName of USERS_FALLBACKS) {
     try {
+      const expressionAttributeValues = {
+        ':zero': { N: '0' },
+        ':delta': { N: String(delta) },
+        ':updatedAt': { S: new Date().toISOString() },
+      };
+      if (delta < 0) {
+        expressionAttributeValues[':one'] = { N: '1' };
+      }
       await ddb.send(
         new UpdateItemCommand({
           TableName: tableName,
@@ -72,12 +80,7 @@ async function updateUserCounter(userId, fieldName, delta) {
             '#updatedAt': 'updatedAt',
             '#counter': fieldName,
           },
-          ExpressionAttributeValues: {
-            ':zero': { N: '0' },
-            ':one': { N: '1' },
-            ':delta': { N: String(delta) },
-            ':updatedAt': { S: new Date().toISOString() },
-          },
+          ExpressionAttributeValues: expressionAttributeValues,
         }),
       );
       return;

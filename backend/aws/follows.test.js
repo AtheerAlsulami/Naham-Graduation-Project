@@ -81,6 +81,13 @@ test('following a cook stores the relationship and increments both counters', as
   assert.equal(updates.length, 2);
   assert.equal(updates[0].input.ExpressionAttributeNames['#counter'], 'followingCooksCount');
   assert.equal(updates[1].input.ExpressionAttributeNames['#counter'], 'followersCount');
+  for (const update of updates) {
+    assert.equal(update.input.ConditionExpression, undefined);
+    assert.equal(
+      Object.hasOwn(update.input.ExpressionAttributeValues, ':one'),
+      false,
+    );
+  }
 });
 
 test('unfollowing a cook removes the relationship and decrements both counters safely', async () => {
@@ -98,6 +105,16 @@ test('unfollowing a cook removes the relationship and decrements both counters s
   assert.equal(updates.length, 2);
   assert.equal(updates[0].input.ExpressionAttributeNames['#counter'], 'followingCooksCount');
   assert.equal(updates[1].input.ExpressionAttributeNames['#counter'], 'followersCount');
+  for (const update of updates) {
+    assert.equal(
+      update.input.ConditionExpression,
+      'attribute_exists(#counter) AND #counter >= :one',
+    );
+    assert.equal(
+      Object.hasOwn(update.input.ExpressionAttributeValues, ':one'),
+      true,
+    );
+  }
 });
 
 test('following a cook works when customerId and cookId are passed as query parameters', async () => {

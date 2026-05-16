@@ -45,10 +45,60 @@ class GroqPricingService {
       currentPrice: currentPrice,
     );
 
+    return _executeGroqPrompt(
+      prompt: prompt,
+      categoryId: categoryId,
+      preparationMinutes: preparationMinutes,
+      ingredients: ingredients,
+      profitMode: profitMode,
+      profitValue: profitValue,
+    );
+  }
+
+  Future<PricingSuggestion> suggestPriceV2({
+    required String categoryId,
+    required int preparationMinutes,
+    required String dishDescription,
+    required String profitMode,
+    required double profitValue,
+    double? currentPrice,
+  }) async {
+    final normalizedKey = apiKey.trim();
+    if (normalizedKey.isEmpty) {
+      throw Exception('GROQ_API_KEY is missing.');
+    }
+
+    final prompt = _buildPromptV2(
+      categoryId: categoryId,
+      preparationMinutes: preparationMinutes,
+      dishDescription: dishDescription,
+      profitMode: profitMode,
+      profitValue: profitValue,
+      currentPrice: currentPrice,
+    );
+
+    return _executeGroqPrompt(
+      prompt: prompt,
+      categoryId: categoryId,
+      preparationMinutes: preparationMinutes,
+      ingredients: const [], // No structured ingredients in V2
+      profitMode: profitMode,
+      profitValue: profitValue,
+    );
+  }
+
+  Future<PricingSuggestion> _executeGroqPrompt({
+    required String prompt,
+    required String categoryId,
+    required int preparationMinutes,
+    required List<PricingIngredientInput> ingredients,
+    required String profitMode,
+    required double profitValue,
+  }) async {
     final response = await _client.post(
       _chatCompletionsUri,
       headers: {
-        'Authorization': 'Bearer $normalizedKey',
+        'Authorization': 'Bearer ${apiKey.trim()}',
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
@@ -70,10 +120,17 @@ class GroqPricingService {
     }
 
     final content = _extractAssistantText(responseBody);
-    final suggestedPrice = _parseSuggestedPrice(content);
+    final suggestedPrice =
+        _parseNumber(content, r'suggested price[:\s]*(\d+(?:[.,]\d+)?)');
     if (suggestedPrice == null || suggestedPrice <= 0) {
       throw Exception('Groq pricing returned an unparseable price.');
     }
+
+    // Try to get breakdown from AI, fallback to heuristics if not found
+    final aiIngredientsCost =
+        _parseNumber(content, r'ingredients cost[:\s]*(\d+(?:[.,]\d+)?)');
+    final aiOpsCost =
+        _parseNumber(content, r'packaging & ops cost[:\s]*(\d+(?:[.,]\d+)?)');
 
     final breakdown = _calculateBreakdown(
       categoryId: categoryId,
@@ -83,9 +140,36 @@ class GroqPricingService {
       profitValue: profitValue,
     );
 
+    // Final breakdown with AI values
+    final aiBaseCost = (aiIngredientsCost ?? breakdown.ingredientsCost) +
+        (aiOpsCost ?? (breakdown.packagingCost + breakdown.operationalCost));
+
+    final normalizedMode = profitMode.trim().toLowerCase();
+    final finalProfitAmount =
+        normalizedMode == 'fixedamount' || normalizedMode == 'fixed'
+            ? profitValue.clamp(0, 5000).toDouble()
+            : aiBaseCost * (profitValue.clamp(0, 250).toDouble() / 100);
+
+    final finalBreakdown = PricingBreakdown(
+      ingredientsCost: aiIngredientsCost ?? breakdown.ingredientsCost,
+      packagingCost:
+          aiOpsCost != null ? aiOpsCost * 0.2 : breakdown.packagingCost,
+      operationalCost:
+          aiOpsCost != null ? aiOpsCost * 0.8 : breakdown.operationalCost,
+      profitAmount: finalProfitAmount,
+      demandBoost: breakdown.demandBoost,
+      baseCost: aiBaseCost,
+    );
+
+    // Recalculate suggested price if AI was too low or inconsistent
+    final minLogicalPrice =
+        aiBaseCost + finalProfitAmount + breakdown.demandBoost;
+    final finalSuggestedPrice =
+        suggestedPrice > minLogicalPrice ? suggestedPrice : minLogicalPrice;
+
     return PricingSuggestion(
-      suggestedPrice: suggestedPrice.clamp(1, 5000).toDouble(),
-      breakdown: breakdown,
+      suggestedPrice: finalSuggestedPrice.clamp(1, 5000).toDouble(),
+      breakdown: finalBreakdown,
       marketSignal: 'groq_direct',
       confidenceScore: 0.86,
       insights: _buildInsights(categoryId, content),
@@ -129,6 +213,39 @@ competitor pricing, customer expectations, and profit margin.
 
 Reply exactly in this format:
 Suggested price: [number] SAR
+Reasoning: [brief Arabic explanation]
+'''
+        .trim();
+  }
+
+  String _buildPromptV2({
+    required String categoryId,
+    required int preparationMinutes,
+    required String dishDescription,
+    required String profitMode,
+    required double profitValue,
+    double? currentPrice,
+  }) {
+    return '''
+You are a pricing expert for a food delivery app in Saudi Arabia.
+Suggest a fair market price for this dish based on the description provided by the cook.
+
+Category: $categoryId
+Preparation time: $preparationMinutes minutes
+Dish Details:
+$dishDescription
+
+Profit mode: $profitMode
+Profit value: $profitValue ${profitMode == 'percentage' ? '%' : 'SAR'}
+Current price: ${currentPrice == null || currentPrice <= 0 ? 'Not set' : '${currentPrice.toStringAsFixed(2)} SAR'}
+
+Consider Saudi market rates, packaging, delivery-platform pressure,
+competitor pricing, customer expectations, and profit margin.
+
+Reply exactly in this format:
+Suggested price: [number] SAR
+Ingredients cost: [number] SAR
+Packaging & Ops cost: [number] SAR
 Reasoning: [brief Arabic explanation]
 '''
         .trim();
@@ -181,16 +298,20 @@ Reasoning: [brief Arabic explanation]
     return trimmed;
   }
 
-  double? _parseSuggestedPrice(String content) {
-    final explicit = RegExp(
-      r'suggested price[:\s]*(\d+(?:[.,]\d+)?)',
+  double? _parseNumber(String content, String pattern) {
+    final match = RegExp(
+      pattern,
       caseSensitive: false,
     ).firstMatch(content);
-    final rawNumber = explicit?.group(1) ??
-        RegExp(r'(\d+(?:[.,]\d+)?)').firstMatch(content)?.group(1);
+    final rawNumber = match?.group(1);
 
     if (rawNumber == null) return null;
     return double.tryParse(rawNumber.replaceAll(',', '.'));
+  }
+
+  double? _parseSuggestedPrice(String content) {
+    return _parseNumber(content, r'suggested price[:\s]*(\d+(?:[.,]\d+)?)') ??
+        _parseNumber(content, r'(\d+(?:[.,]\d+)?)');
   }
 
   PricingBreakdown _calculateBreakdown({
@@ -274,24 +395,28 @@ Reasoning: [brief Arabic explanation]
     return (subtotal * percentage).clamp(0.8, 12).toDouble();
   }
 
-  List<String> _buildInsights(String categoryId, String aiReasoning) {
-    final trimmedReasoning = aiReasoning.trim();
+  List<String> _buildInsights(String categoryId, String fullContent) {
+    // Extract only the part after "Reasoning:"
+    final reasoningMatch = RegExp(
+      r'reasoning[:\s]*(.*)',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(fullContent);
+
+    final actualReasoning = reasoningMatch?.group(1)?.trim() ?? '';
+
+    // Filter out any leftover format keys just in case
+    final cleaned = actualReasoning
+        .split('\n')
+        .where((line) =>
+            !line.toLowerCase().contains('suggested price:') &&
+            !line.toLowerCase().contains('ingredients cost:') &&
+            !line.toLowerCase().contains('packaging & ops cost:'))
+        .join('\n')
+        .trim();
+
     return [
-      if (trimmedReasoning.isNotEmpty) trimmedReasoning,
-      ...switch (categoryId) {
-        'sweets' || 'najdi' => const [
-            'High demand potential in this category.',
-            'A small market premium may be acceptable.',
-          ],
-        'baked' => const [
-            'Demand is stable; balanced pricing is recommended.',
-            'Packaging quality can increase perceived value.',
-          ],
-        _ => const [
-            'Keep the price competitive to improve conversion.',
-            'Use strong photos and a clear dish description.',
-          ],
-      },
+      if (cleaned.isNotEmpty) cleaned,
     ];
   }
 }

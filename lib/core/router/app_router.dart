@@ -25,6 +25,7 @@ import 'package:naham_app/screens/cook/cook_bank_account_screen.dart';
 import 'package:naham_app/screens/cook/cook_hygiene_history_screen.dart';
 import 'package:naham_app/screens/cook/cook_live_inspection_screen.dart';
 import 'package:naham_app/screens/cook/cook_ai_pricing_screen.dart';
+import 'package:naham_app/screens/cook/cook_ai_pricing_v2_screen.dart';
 import 'package:naham_app/screens/cook/cook_reports_screen.dart';
 import 'package:naham_app/screens/cook/cook_dish_form_screen.dart';
 import 'package:naham_app/screens/cook/cook_chat_support_screen.dart';
@@ -256,7 +257,7 @@ class AppRouter {
                     categoryId: 'najdi',
                     preparationMinutes: 25,
                   );
-            return _wrapCook(CookAiPricingScreen(payload: payload));
+            return _wrapCook(CookAiPricingV2Screen(payload: payload));
           },
         ),
         GoRoute(
